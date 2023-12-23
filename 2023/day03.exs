@@ -1,74 +1,114 @@
+# Thoughts: matrix using 2 maps made things harder to think about
+
 defmodule DayThree do
-  def calculate(input) do
-    {numbers, symbols} =
+  def parts(input) do
+    {numbers_matrix, symbols_matrix} =
       File.stream!(input)
       |> Enum.map(&String.trim(&1))
-      |> parse()
+      |> parse(~r/([^\d^\.^\s])/)
 
-    numbers
-    |> Enum.map(fn {index, values} ->
-      symbols_top = null_or_empty(Map.get(symbols, index - 1))
-      symbols_middle = Map.get(symbols, index)
-      symbols_bottom = null_or_empty(Map.get(symbols, index + 1))
+    numbers_matrix
+    |> Enum.map(fn {y, xs} ->
+      xs
+      |> Enum.filter(fn {x, {length, _}} ->
+        min_x = x - 1
+        max_x = x + length
+        min_y = y - 1
+        max_y = y + 1
 
-      values
-      |> Enum.filter(fn {coord, _} ->
-        intersect(coord, symbols_top) ||
-          intersect(coord, symbols_middle) ||
-          intersect(coord, symbols_bottom)
+        symbols_matrix
+        |> Enum.any?(fn {row, cols} ->
+          cols
+          |> Enum.any?(fn {col, _} ->
+            min_x <= col and col <= max_x and
+              min_y <= row and row <= max_y
+          end)
+        end)
       end)
-      |> Enum.map(fn {_, number} ->
-        String.to_integer(number)
+      |> Enum.map(fn {_, {_, number}} -> number end)
+    end)
+    |> List.flatten()
+    |> Enum.sum()
+  end
+
+  def gears(input) do
+    {numbers_matrix, symbols_matrix} =
+      File.stream!(input)
+      |> Enum.map(&String.trim(&1))
+      |> parse(~r/(\*)/)
+
+    symbols_matrix
+    |> Enum.map(fn {row, cols} ->
+      cols
+      |> Enum.map(fn {col, _} ->
+        {adjacent_count, result} =
+          numbers_matrix
+          |> Enum.reduce({0, 1}, fn {y, xs}, acc ->
+            xs
+            |> Enum.reduce(acc, fn {x, {length, number}}, {count, product} ->
+              if count > 2 do
+                {count, product}
+              else
+                min_x = x - 1
+                max_x = x + length
+                min_y = y - 1
+                max_y = y + 1
+
+                row? = min_y <= row and row <= max_y
+                col? = min_x <= col and col <= max_x
+
+                case row? and col? do
+                  true -> {count + 1, product * number}
+                  false -> {count, product}
+                end
+              end
+            end)
+          end)
+
+        case adjacent_count == 2 do
+          true -> result
+          false -> 0
+        end
       end)
     end)
     |> List.flatten()
     |> Enum.sum()
   end
 
-  defp null_or_empty(val) when is_list(val), do: val
-  defp null_or_empty(val) when is_nil(val), do: []
-
-  defp parse(stream) do
+  defp parse(stream, pattern) do
     stream
     |> Enum.with_index()
-    |> Enum.reduce({%{}, %{}}, fn {line, index}, {numbers, symbols} ->
-      number_indices =
+    |> Enum.reduce({%{}, %{}}, fn {line, x}, {numbers_matrix, symbols_matrix} ->
+      numbers =
         Regex.scan(~r/(\d+)/, line, return: :index, capture: :all_but_first)
         |> List.flatten()
+        |> Enum.reduce(%{}, fn {offset, length}, acc ->
+          y = offset
+          value = String.slice(line, offset, length) |> String.to_integer()
 
-      number_values =
-        Regex.scan(~r/(\d+)/, line, capture: :all_but_first)
-        |> List.flatten()
-
-      symbol_indices =
-        Regex.scan(~r/([^\.^\d^\s])/, line, return: :index, capture: :all_but_first)
-        |> List.flatten()
-
-      values =
-        number_indices
-        |> Enum.with_index()
-        |> Enum.map(fn {indices, i} ->
-          {indices, number_values |> Enum.at(i)}
+          Map.put(acc, y, {length, value})
         end)
 
-      {Map.put(numbers, index, values), Map.put(symbols, index, symbol_indices)}
+      symbols =
+        Regex.scan(pattern, line, return: :index, capture: :all_but_first)
+        |> List.flatten()
+        |> Enum.reduce(%{}, fn {offset, length}, acc ->
+          y = offset
+          value = String.slice(line, offset, length)
+
+          Map.put(acc, y, value)
+        end)
+
+      {Map.put(numbers_matrix, x, numbers), Map.put(symbols_matrix, x, symbols)}
     end)
-  end
-
-  defp intersect(number, symbols) when is_list(symbols) do
-    symbols |> Enum.any?(&intersect(number, &1))
-  end
-
-  defp intersect(number, symbol) do
-    symbol_pos = elem(symbol, 0)
-    number_start = elem(number, 0)
-    number_end = number_start + elem(number, 1) - 1
-
-    number_start - 1 <= symbol_pos && symbol_pos <= number_end + 1
   end
 end
 
 # 4361
-IO.inspect(DayThree.calculate("2023/day03_example"))
+IO.inspect(DayThree.parts("2023/day03_example"))
 # 560670
-IO.inspect(DayThree.calculate("2023/day03_input"))
+IO.inspect(DayThree.parts("2023/day03_input"))
+# 467835
+IO.inspect(DayThree.gears("2023/day03_example"))
+# 91622824
+IO.inspect(DayThree.gears("2023/day03_input"))
